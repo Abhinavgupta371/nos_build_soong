@@ -19,6 +19,7 @@ import (
 	"reflect"
 	"runtime"
 	"strings"
+	"extras/soong/android"
 
 	"github.com/google/blueprint/proptools"
 )
@@ -106,6 +107,8 @@ type variableProperties struct {
 		Pdk struct {
 			Enabled *bool
 		}
+		*android.Product_variables
+
 	} `android:"arch_variant"`
 }
 
@@ -187,6 +190,8 @@ type productVariables struct {
 
 	BoardUsesQCOMHardware *bool `json:",omitempty"`
 	TargetUsesQCOMBsp *bool `json:",omitempty"`
+
+	*android.ProductVariables
 }
 
 func boolPtr(v bool) *bool {
@@ -239,7 +244,14 @@ func variableMutator(mctx BottomUpMutatorContext) {
 	a := module.base()
 	variableValues := reflect.ValueOf(&a.variableProperties.Product_variables).Elem()
 	zeroValues := reflect.ValueOf(zeroProductVariables.Product_variables)
+	valStruct := reflect.ValueOf(mctx.Config().(Config).ProductVariables)
 
+	doVariableMutation(mctx, a, variableValues, zeroValues, valStruct)
+
+}
+
+func doVariableMutation(mctx BottomUpMutatorContext, a *ModuleBase, variableValues reflect.Value, zeroValues reflect.Value,
+	valStruct reflect.Value) {
 	for i := 0; i < variableValues.NumField(); i++ {
 		variableValue := variableValues.Field(i)
 		zeroValue := zeroValues.Field(i)
@@ -247,8 +259,11 @@ func variableMutator(mctx BottomUpMutatorContext) {
 		property := "product_variables." + proptools.PropertyNameForField(name)
 
 		// Check that the variable was set for the product
-		val := reflect.ValueOf(mctx.Config().(Config).ProductVariables).FieldByName(name)
-		if !val.IsValid() || val.Kind() != reflect.Ptr || val.IsNil() {
+		val := valStruct.FieldByName(name)
+		if val.IsValid() && val.Kind() == reflect.Struct {
+			doVariableMutation(mctx, a, variableValue, zeroValue, val)
+			continue
+		} else if !val.IsValid() || val.Kind() != reflect.Ptr || val.IsNil() {
 			continue
 		}
 
